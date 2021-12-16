@@ -3,7 +3,9 @@ package solver
 import (
 	"context"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/moby/buildkit/solver/internal/pipe"
 	"github.com/moby/buildkit/util/bklog"
@@ -16,6 +18,13 @@ var debugScheduler = false // TODO: replace with logs in build trace
 func init() {
 	if os.Getenv("BUILDKIT_SCHEDULER_DEBUG") == "1" {
 		debugScheduler = true
+	} else {
+		ch := make(chan os.Signal, 1)
+		go func() {
+			<-ch
+			debugScheduler = true
+		}()
+		signal.Notify(ch, syscall.SIGUSR1)
 	}
 }
 
