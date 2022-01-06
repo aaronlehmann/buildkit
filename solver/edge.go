@@ -172,7 +172,7 @@ func (e *edge) finishIncoming(req pipe.Sender) {
 	if req.Request().Canceled && err == nil {
 		err = context.Canceled
 	}
-	if debugScheduler {
+	if debugScheduler() {
 		bklog.G(context.TODO()).Debugf("finishIncoming %s %v %#v desired=%s", e.edge.Vertex.Name(), err, e.edgeState, req.Request().Payload.(*edgeRequest).desiredState)
 	}
 	req.Finalize(&e.edgeState, err)
@@ -180,7 +180,7 @@ func (e *edge) finishIncoming(req pipe.Sender) {
 
 // updateIncoming updates the current value of incoming pipe request
 func (e *edge) updateIncoming(req pipe.Sender) {
-	if debugScheduler {
+	if debugScheduler() {
 		bklog.G(context.TODO()).Debugf("updateIncoming %s %#v desired=%s", e.edge.Vertex.Name(), e.edgeState, req.Request().Payload.(*edgeRequest).desiredState)
 	}
 	req.Update(&e.edgeState)
@@ -674,7 +674,7 @@ func (e *edge) recalcCurrentState() {
 					}
 					if len(openKeys) == 0 {
 						e.state = edgeStatusCacheSlow
-						if debugScheduler {
+						if debugScheduler() {
 							bklog.G(context.TODO()).Debugf("upgrade to cache-slow because no open keys")
 						}
 					}
@@ -713,7 +713,7 @@ func (e *edge) respondToIncoming(incoming []pipe.Sender, allPipes []pipe.Receive
 		allIncomingCanComplete = false
 	}
 
-	if debugScheduler {
+	if debugScheduler() {
 		bklog.G(context.TODO()).Debugf("status state=%s cancomplete=%v hasouts=%v noPossibleCache=%v depsCacheFast=%v keys=%d cacheRecords=%d", e.state, allIncomingCanComplete, e.hasActiveOutgoing, e.noCacheMatchPossible, e.allDepsCompletedCacheFast, len(e.keys), len(e.cacheRecords))
 	}
 

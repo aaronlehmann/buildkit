@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	if debugScheduler {
+	if debugScheduler() {
 		logrus.SetOutput(os.Stdout)
 		logrus.SetLevel(logrus.DebugLevel)
 	}

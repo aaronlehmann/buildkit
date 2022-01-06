@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/moby/buildkit/solver/internal/pipe"
@@ -13,16 +14,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-var debugScheduler = false // TODO: replace with logs in build trace
+var enableDebugScheduler int32
+
+func debugScheduler() bool {
+	return atomic.LoadInt32(&enableDebugScheduler) == 1
+}
 
 func init() {
 	if os.Getenv("BUILDKIT_SCHEDULER_DEBUG") == "1" {
-		debugScheduler = true
+		enableDebugScheduler = 1
 	} else {
 		ch := make(chan os.Signal, 1)
 		go func() {
 			<-ch
-			debugScheduler = true
+			atomic.StoreInt32(&enableDebugScheduler, 1)
 		}()
 		signal.Notify(ch, syscall.SIGUSR1)
 	}
@@ -139,11 +144,11 @@ func (s *scheduler) dispatch(e *edge) {
 	pf := &pipeFactory{s: s, e: e}
 
 	// unpark the edge
-	if debugScheduler {
+	if debugScheduler() {
 		debugSchedulerPreUnpark(e, inc, updates, out)
 	}
 	e.unpark(inc, updates, out, pf)
-	if debugScheduler {
+	if debugScheduler() {
 		debugSchedulerPostUnpark(e, inc)
 	}
 
@@ -362,7 +367,7 @@ func (pf *pipeFactory) NewInputRequest(ee Edge, req *edgeRequest) pipe.Receiver 
 		})
 	}
 	p := pf.s.newPipe(target, pf.e, pipe.Request{Payload: req})
-	if debugScheduler {
+	if debugScheduler() {
 		bklog.G(context.TODO()).Debugf("> newPipe %s %p desiredState=%s", ee.Vertex.Name(), p, req.desiredState)
 	}
 	return p.Receiver
@@ -370,7 +375,7 @@ func (pf *pipeFactory) NewInputRequest(ee Edge, req *edgeRequest) pipe.Receiver 
 
 func (pf *pipeFactory) NewFuncRequest(f func(context.Context) (interface{}, error)) pipe.Receiver {
 	p := pf.s.newRequestWithFunc(pf.e, f)
-	if debugScheduler {
+	if debugScheduler() {
 		bklog.G(context.TODO()).Debugf("> newFunc %p", p)
 	}
 	return p
