@@ -391,7 +391,7 @@ func (w *containerdExecutor) runProcess(ctx context.Context, p containerd.Proces
 		case <-ctxDone:
 			ctxDone = nil
 			var killCtx context.Context
-			killCtx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+			killCtx, cancel = context.WithTimeout(context.Background(), 120*time.Second)
 			killCtxDone = killCtx.Done()
 			p.Kill(killCtx, syscall.SIGKILL)
 			io.Cancel()

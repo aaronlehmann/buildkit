@@ -485,10 +485,10 @@ func (p *startingProcess) WaitForReady(ctx context.Context) error {
 }
 
 // WaitForStart will record the pid reported by Runc via the channel.
-// We wait for up to 10s for the runc process to start.  If the started
+// We wait for up to 120s for the runc process to start. If the started
 // callback is non-nil it will be called after receiving the pid.
 func (p *startingProcess) WaitForStart(ctx context.Context, startedCh <-chan int, started func()) error {
-	startedCtx, timeout := context.WithTimeout(ctx, 10*time.Second)
+	startedCtx, timeout := context.WithTimeout(ctx, 120*time.Second)
 	defer timeout()
 	var err error
 	select {
