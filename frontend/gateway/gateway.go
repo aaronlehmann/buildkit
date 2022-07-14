@@ -251,7 +251,8 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 		}
 	}
 
-	lbf, ctx, err := serveLLBBridgeForwarder(ctx, llbBridge, gf.workers, inputs, sid, sm)
+	started := make(chan struct{})
+	lbf, ctx, err := serveLLBBridgeForwarder(ctx, llbBridge, gf.workers, inputs, sid, sm, started)
 	defer lbf.conn.Close() //nolint
 	if err != nil {
 		return nil, err
@@ -275,8 +276,14 @@ func (gf *gatewayFrontend) Solve(ctx context.Context, llbBridge frontend.Fronten
 		mnts = append(mnts, *mdmnt)
 	}
 
-	err = w.Executor().Run(ctx, "", mountWithSession(rootFS, session.NewGroup(sid)), mnts, executor.ProcessInfo{Meta: meta, Stdin: lbf.Stdin, Stdout: lbf.Stdout, Stderr: os.Stderr}, nil)
-
+	err = w.Executor().Run(
+		ctx,
+		"",
+		mountWithSession(rootFS, session.NewGroup(sid)),
+		mnts,
+		executor.ProcessInfo{Meta: meta, Stdin: lbf.Stdin, Stdout: lbf.Stdout, Stderr: os.Stderr},
+		started,
+	)
 	if err != nil {
 		if errdefs.IsCanceled(err) && lbf.isErrServerClosed {
 			err = errors.Errorf("frontend grpc server closed unexpectedly")
@@ -425,7 +432,14 @@ func newBridgeForwarder(ctx context.Context, llbBridge frontend.FrontendLLBBridg
 	return lbf
 }
 
-func serveLLBBridgeForwarder(ctx context.Context, llbBridge frontend.FrontendLLBBridge, workers worker.Infos, inputs map[string]*opspb.Definition, sid string, sm *session.Manager) (*llbBridgeForwarder, context.Context, error) {
+func serveLLBBridgeForwarder(
+	ctx context.Context,
+	llbBridge frontend.FrontendLLBBridge,
+	workers worker.Infos,
+	inputs map[string]*opspb.Definition,
+	sid string, sm *session.Manager,
+	started <-chan struct{},
+) (*llbBridgeForwarder, context.Context, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	lbf := newBridgeForwarder(ctx, llbBridge, workers, inputs, sid, sm)
 	server := grpc.NewServer(grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor), grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor))
@@ -433,13 +447,20 @@ func serveLLBBridgeForwarder(ctx context.Context, llbBridge frontend.FrontendLLB
 	pb.RegisterLLBBridgeServer(server, lbf)
 
 	go func() {
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			return
+		case <-started:
+		}
+
 		serve(ctx, server, lbf.conn)
+
 		select {
 		case <-ctx.Done():
 		default:
 			lbf.isErrServerClosed = true
 		}
-		cancel()
 	}()
 
 	return lbf, ctx, nil
