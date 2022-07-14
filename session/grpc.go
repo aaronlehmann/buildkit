@@ -79,19 +79,23 @@ func monitorHealth(ctx context.Context, cc *grpc.ClientConn, cancelConn func()) 
 	defer cancelConn()
 	defer cc.Close()
 
+	bklog.G(ctx).Debugf("starting monitorHealth")
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	healthClient := grpc_health_v1.NewHealthClient(cc)
 
-	for {
+	for i := 0; ; i++ {
 		select {
 		case <-ctx.Done():
+			bklog.G(ctx).Debugf("monitorHealth context cancelled")
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			_, err := healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
 			cancel()
 			if err != nil {
+				bklog.G(ctx).Debugf("error from health check #%d: %s", i, err)
 				return
 			}
 		}

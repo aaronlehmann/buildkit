@@ -351,6 +351,7 @@ func exitError(ctx context.Context, err error) error {
 		)
 		select {
 		case <-ctx.Done():
+			bklog.G(ctx).Errorf("context cancelled in exitError: %s", exitErr)
 			exitErr.Err = errors.Wrapf(ctx.Err(), exitErr.Error())
 			return exitErr
 		default:
@@ -493,9 +494,11 @@ func (p *startingProcess) WaitForStart(ctx context.Context, startedCh <-chan int
 	var err error
 	select {
 	case <-startedCtx.Done():
+		bklog.G(ctx).Errorf("runc started message never received")
 		return errors.New("runc started message never received")
 	case pid, ok := <-startedCh:
 		if !ok {
+			bklog.G(ctx).Errorf("runc process failed to send the pid")
 			return errors.New("runc process failed to send pid")
 		}
 		if started != nil {

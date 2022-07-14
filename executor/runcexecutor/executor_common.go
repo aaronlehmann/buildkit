@@ -8,6 +8,7 @@ import (
 
 	runc "github.com/containerd/go-runc"
 	"github.com/moby/buildkit/executor"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -27,6 +28,9 @@ func (w *runcExecutor) run(ctx context.Context, id, bundle string, process execu
 			Started: started,
 			IO:      io,
 		})
+		if err != nil {
+			bklog.G(ctx).Errorf("runc.Run returned error: %s", err)
+		}
 		return err
 	})
 }
