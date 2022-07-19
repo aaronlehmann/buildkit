@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"runtime"
 	"syscall"
 
 	"github.com/containerd/console"
@@ -23,6 +24,12 @@ func updateRuncFieldsForHostOS(runtime *runc.Runc) {
 
 func (w *runcExecutor) run(ctx context.Context, id, bundle string, process executor.ProcessInfo, started func()) error {
 	return w.callWithIO(ctx, id, bundle, process, started, func(ctx context.Context, started chan<- int, io runc.IO) error {
+		// To prevent runc from receiving a SIGKILL from the OS thread exiting
+		// See https://github.com/golang/go/issues/27505
+		// TODO: move to go-runc package's (defaultMonitor).Start or methods which call it
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
 		_, err := w.runc.Run(ctx, id, bundle, &runc.CreateOpts{
 			NoPivot: w.noPivot,
 			Started: started,
@@ -37,6 +44,12 @@ func (w *runcExecutor) run(ctx context.Context, id, bundle string, process execu
 
 func (w *runcExecutor) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
 	return w.callWithIO(ctx, id, bundle, process, started, func(ctx context.Context, started chan<- int, io runc.IO) error {
+		// To prevent runc from receiving a SIGKILL from the OS thread exiting
+		// See https://github.com/golang/go/issues/27505
+		// TODO: move to go-runc package's (defaultMonitor).Start or methods which call it
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
 		return w.runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
 			Started: started,
 			IO:      io,
