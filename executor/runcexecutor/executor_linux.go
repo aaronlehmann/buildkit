@@ -28,6 +28,9 @@ func (w *runcExecutor) run(ctx context.Context, id, bundle string, process execu
 			Started: started,
 			IO:      io,
 		})
+		if err != nil {
+			bklog.G(ctx).Errorf("runc.Run returned error: %s", err)
+		}
 		return err
 	})
 }
@@ -51,7 +54,11 @@ func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, proces
 
 	var eg errgroup.Group
 	egCtx, cancel := context.WithCancel(ctx)
-	defer eg.Wait()
+	defer func() {
+		if err := eg.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+			bklog.G(ctx).Warningf("error from runc error group: %s", err)
+		}
+	}()
 	defer cancel()
 
 	startedCh := make(chan int, 1)
