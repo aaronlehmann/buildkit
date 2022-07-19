@@ -303,6 +303,8 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 						return
 					default:
 					}
+				} else {
+					bklog.G(ctx).Debugf("successfully killed runc %s", id)
 				}
 				timeout()
 				select {
@@ -322,6 +324,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	err = w.run(runCtx, id, bundle, process, func() {
 		startedOnce.Do(func() {
 			trace.SpanFromContext(ctx).AddEvent("Container started")
+			bklog.G(ctx).Debugf("container started")
 			if started != nil {
 				close(started)
 			}

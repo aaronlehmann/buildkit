@@ -68,18 +68,22 @@ func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, proces
 	var eg errgroup.Group
 	egCtx, cancel := context.WithCancel(ctx)
 	defer func() {
+		bklog.G(ctx).Debugf("waiting for error group")
 		if err := eg.Wait(); err != nil && !errors.Is(err, context.Canceled) {
 			bklog.G(ctx).Warningf("error from runc error group: %s", err)
 		}
+		bklog.G(ctx).Debugf("done waiting for error group")
 	}()
 	defer cancel()
 
 	startedCh := make(chan int, 1)
 	eg.Go(func() error {
+		defer bklog.G(ctx).Debugf("WaitForStart goroutine finished")
 		return runcProcess.WaitForStart(egCtx, startedCh, started)
 	})
 
 	eg.Go(func() error {
+		defer bklog.G(ctx).Debugf("handleSignals goroutine finished")
 		return handleSignals(egCtx, runcProcess, process.Signal)
 	})
 
@@ -105,14 +109,17 @@ func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, proces
 		pts.Close()
 		ptm.Close()
 		cancel() // this will shutdown resize and signal loops
+		bklog.G(ctx).Debugf("waiting for error group (with tty)")
 		err := eg.Wait()
 		if err != nil {
 			bklog.G(ctx).Warningf("error while shutting down tty io: %s", err)
 		}
+		bklog.G(ctx).Debugf("done waiting for error group (with tty)")
 	}()
 
 	if process.Stdin != nil {
 		eg.Go(func() error {
+			defer bklog.G(ctx).Debugf("stdin goroutine finished")
 			_, err := io.Copy(ptm, process.Stdin)
 			// stdin might be a pipe, so this is like EOF
 			if errors.Is(err, io.ErrClosedPipe) {
@@ -124,6 +131,7 @@ func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, proces
 
 	if process.Stdout != nil {
 		eg.Go(func() error {
+			defer bklog.G(ctx).Debugf("stdout goroutine finished")
 			_, err := io.Copy(process.Stdout, ptm)
 			// ignore `read /dev/ptmx: input/output error` when ptm is closed
 			var ptmClosedError *os.PathError
@@ -139,6 +147,7 @@ func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, proces
 	}
 
 	eg.Go(func() error {
+		defer bklog.G(ctx).Debugf("WaitForReady goroutine finished")
 		err := runcProcess.WaitForReady(egCtx)
 		if err != nil {
 			return err
