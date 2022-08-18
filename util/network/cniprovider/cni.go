@@ -11,6 +11,7 @@ import (
 	"github.com/moby/buildkit/util/network"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Opt struct {
@@ -62,24 +63,27 @@ func (c *cniProvider) initNetwork() error {
 		}
 		defer l.Unlock()
 	}
-	ns, err := c.New()
+	ns, err := c.New(nil)
 	if err != nil {
 		return err
 	}
 	return ns.Close()
 }
 
-func (c *cniProvider) New() (network.Namespace, error) {
+func (c *cniProvider) New(ctx context.Context) (network.Namespace, error) {
 	id := identity.NewID()
-	nativeID, err := createNetNS(c, id)
+	trace.SpanFromContext(ctx).AddEvent("cniProvider generated ID")
+	nativeID, err := createNetNS(ctx, c, id)
 	if err != nil {
 		return nil, err
 	}
+	trace.SpanFromContext(ctx).AddEvent("finished createNetNS")
 
 	if _, err := c.CNI.Setup(context.TODO(), id, nativeID); err != nil {
 		deleteNetNS(nativeID)
 		return nil, errors.Wrap(err, "CNI setup error")
 	}
+	trace.SpanFromContext(ctx).AddEvent("finished cni Setup")
 
 	return &cniNS{nativeID: nativeID, id: id, handle: c.CNI}, nil
 }

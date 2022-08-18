@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/util/flightcontrol"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var g flightcontrol.Group
@@ -27,6 +28,7 @@ type DNSConfig struct {
 func GetResolvConf(ctx context.Context, stateDir string, idmap *idtools.IdentityMapping, dns *DNSConfig) (string, error) {
 	p := filepath.Join(stateDir, "resolv.conf")
 	_, err := g.Do(ctx, stateDir, func(ctx context.Context) (interface{}, error) {
+		trace.SpanFromContext(ctx).AddEvent("in GetResolvConf flightcontrol callback")
 		generate := !notFirstRun
 		notFirstRun = true
 
@@ -113,6 +115,7 @@ func GetResolvConf(ctx context.Context, stateDir string, idmap *idtools.Identity
 		if err := os.Rename(tmpPath, p); err != nil {
 			return "", err
 		}
+		trace.SpanFromContext(ctx).AddEvent("finished GetResolvConf flightcontrol callback")
 		return "", nil
 	})
 	if err != nil {

@@ -137,11 +137,13 @@ func New(opt Opt, networkProviders map[pb.NetMode]network.Provider) (executor.Ex
 }
 
 func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, mounts []executor.Mount, process executor.ProcessInfo, started chan<- struct{}) (err error) {
+	trace.SpanFromContext(ctx).AddEvent("runcExecutor.Run starting")
 	meta := process.Meta
 
 	startedOnce := sync.Once{}
 	done := make(chan error, 1)
 	w.mu.Lock()
+	trace.SpanFromContext(ctx).AddEvent("runcExecutor.Run lock obtained")
 	w.running[id] = done
 	w.mu.Unlock()
 	defer func() {
@@ -161,25 +163,30 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	if !ok {
 		return errors.Errorf("unknown network mode %s", meta.NetMode)
 	}
-	namespace, err := provider.New()
+	trace.SpanFromContext(ctx).AddEvent("calling provider.New")
+	namespace, err := provider.New(ctx)
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).AddEvent("finished calling provider.New")
 	defer namespace.Close()
 
 	if meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
 	}
 
+	trace.SpanFromContext(ctx).AddEvent("calling GetResolvConf")
 	resolvConf, err := oci.GetResolvConf(ctx, w.root, w.idmap, w.dns)
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).AddEvent("finished calling GetResolvConf")
 
 	hostsFile, clean, err := oci.GetHostsFile(ctx, w.root, meta.ExtraHosts, w.idmap, meta.Hostname)
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).AddEvent("generated hosts file")
 	if clean != nil {
 		defer clean()
 	}
@@ -188,11 +195,13 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).AddEvent("called root.Src.Mount")
 
 	rootMount, release, err := mountable.Mount()
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).AddEvent("called mountable.Mount")
 	if release != nil {
 		defer release()
 	}
@@ -255,6 +264,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	if err != nil {
 		return err
 	}
+	trace.SpanFromContext(ctx).AddEvent("generated oci spec")
 	defer cleanup()
 
 	spec.Root.Path = rootFSPath

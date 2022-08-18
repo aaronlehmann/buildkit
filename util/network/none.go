@@ -1,6 +1,8 @@
 package network
 
 import (
+	"context"
+
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -11,7 +13,7 @@ func NewNoneProvider() Provider {
 type none struct {
 }
 
-func (h *none) New() (Namespace, error) {
+func (h *none) New(_ context.Context) (Namespace, error) {
 	return &noneNS{}, nil
 }
 

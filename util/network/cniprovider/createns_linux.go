@@ -4,6 +4,7 @@
 package cniprovider
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -12,10 +13,11 @@ import (
 	"github.com/containerd/containerd/oci"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 )
 
-func createNetNS(c *cniProvider, id string) (string, error) {
+func createNetNS(ctx context.Context, c *cniProvider, id string) (string, error) {
 	nsPath := filepath.Join(c.root, "net/cni", id)
 	if err := os.MkdirAll(filepath.Dir(nsPath), 0700); err != nil {
 		return "", err
@@ -42,6 +44,7 @@ func createNetNS(c *cniProvider, id string) (string, error) {
 	}
 	beforeFork()
 
+	trace.SpanFromContext(ctx).AddEvent("calling clone syscall")
 	pid, _, errno := syscall.RawSyscall6(syscall.SYS_CLONE, uintptr(syscall.SIGCHLD)|unix.CLONE_NEWNET, 0, 0, 0, 0, 0)
 	if errno != 0 {
 		afterFork()
@@ -51,11 +54,14 @@ func createNetNS(c *cniProvider, id string) (string, error) {
 
 	if pid != 0 {
 		afterFork()
+		trace.SpanFromContext(ctx).AddEvent("calling wait4 syscall")
 		var ws unix.WaitStatus
 		_, err = unix.Wait4(int(pid), &ws, 0, nil)
 		for err == syscall.EINTR {
+			trace.SpanFromContext(ctx).AddEvent("calling wait4 syscall again")
 			_, err = unix.Wait4(int(pid), &ws, 0, nil)
 		}
+		trace.SpanFromContext(ctx).AddEvent("wait4 syscall returned")
 
 		if err != nil {
 			deleteNetNS(nsPath)
