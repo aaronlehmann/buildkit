@@ -42,9 +42,9 @@ func createNetNS(ctx context.Context, c *cniProvider, id string) (string, error)
 		deleteNetNS(nsPath)
 		return "", err
 	}
+	trace.SpanFromContext(ctx).AddEvent("calling clone syscall")
 	beforeFork()
 
-	trace.SpanFromContext(ctx).AddEvent("calling clone syscall")
 	pid, _, errno := syscall.RawSyscall6(syscall.SYS_CLONE, uintptr(syscall.SIGCHLD)|unix.CLONE_NEWNET, 0, 0, 0, 0, 0)
 	if errno != 0 {
 		afterFork()
