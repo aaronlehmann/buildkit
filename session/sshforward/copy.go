@@ -3,6 +3,7 @@ package sshforward
 import (
 	"context"
 	"io"
+	"net"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -23,7 +24,10 @@ func Copy(ctx context.Context, conn io.ReadWriteCloser, stream Stream, closeStre
 			if err := stream.RecvMsg(p); err != nil {
 				if err == io.EOF {
 					// indicates client performed CloseSend, but they may still be
-					// reading data, so don't close conn yet
+					// reading data
+					if unixConn, ok := conn.(*net.UnixConn); ok {
+						unixConn.CloseWrite()
+					}
 					return nil
 				}
 				conn.Close()
