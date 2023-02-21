@@ -307,6 +307,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 				timeout()
 				select {
 				case <-time.After(50 * time.Millisecond):
+					cancelRun()
 				case <-ended:
 					return
 				}
