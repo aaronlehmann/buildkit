@@ -187,7 +187,10 @@ func (h *HistoryQueue) addResource(ctx context.Context, l leases.Lease, desc *co
 }
 
 func (h *HistoryQueue) UpdateRef(ctx context.Context, ref string, upt func(r *controlapi.BuildHistoryRecord) error) error {
+	bklog.L.Debugf("started (*HistoryQueue).UpdateRef for job %s", ref)
 	h.mu.Lock()
+	bklog.L.Debugf("obtained mutex in (*HistoryQueue).UpdateRef for job %s", ref)
+	defer bklog.L.Debugf("released mutex in (*HistoryQueue).UpdateRef for job %s", ref)
 	defer h.mu.Unlock()
 
 	var br controlapi.BuildHistoryRecord
@@ -218,9 +221,11 @@ func (h *HistoryQueue) UpdateRef(ctx context.Context, ref string, upt func(r *co
 		return errors.Errorf("invalid ref change")
 	}
 
+	bklog.L.Debugf("UpdateRef: calling h.update for job %s", br.Ref)
 	if err := h.update(ctx, br); err != nil {
 		return err
 	}
+	bklog.L.Debugf("UpdateRef: done with h.update for job %s", br.Ref)
 	h.ps.Send(&controlapi.BuildHistoryEvent{
 		Type:   controlapi.BuildHistoryEventType_COMPLETE,
 		Record: &br,
@@ -352,15 +357,11 @@ func (h *HistoryQueue) update(ctx context.Context, rec controlapi.BuildHistoryRe
 }
 
 func (h *HistoryQueue) Update(ctx context.Context, e *controlapi.BuildHistoryEvent) error {
-	if e.Type == controlapi.BuildHistoryEventType_STARTED {
-		bklog.G(ctx).Debugf("starting (*HistoryQueue.Update for job id %s", e.Record.Ref)
-		defer bklog.G(ctx).Debugf("finished (*HistoryQueue).Update for job id %s", e.Record.Ref)
-	}
+	bklog.G(ctx).Debugf("starting (*HistoryQueue).Update for job id %s", e.Record.Ref)
+	defer bklog.G(ctx).Debugf("released mutex in (*HistoryQueue).Update for job id %s", e.Record.Ref)
 	h.init()
 	h.mu.Lock()
-	if e.Type == controlapi.BuildHistoryEventType_STARTED {
-		bklog.G(ctx).Debugf("obtained (*HistoryQueue).Update mutex for job id %s", e.Record.Ref)
-	}
+	bklog.L.Debugf("obtained mutex in (*HistoryQueue).Update for job %s", e.Record.Ref)
 	defer h.mu.Unlock()
 
 	if e.Type == controlapi.BuildHistoryEventType_STARTED {
@@ -370,16 +371,21 @@ func (h *HistoryQueue) Update(ctx context.Context, e *controlapi.BuildHistoryEve
 
 	if e.Type == controlapi.BuildHistoryEventType_COMPLETE {
 		delete(h.active, e.Record.Ref)
+		bklog.L.Debugf("Update: calling h.update for job %s", e.Record.Ref)
 		if err := h.update(ctx, *e.Record); err != nil {
 			return err
 		}
+		bklog.L.Debugf("Update: done with h.update for job %s", e.Record.Ref)
 		h.ps.Send(e)
 	}
 	return nil
 }
 
 func (h *HistoryQueue) Delete(ctx context.Context, ref string) error {
+	bklog.G(ctx).Debugf("starting (*HistoryQueue).Delete for job id %s", ref)
+	defer bklog.G(ctx).Debugf("released mutex in (*HistoryQueue).Delete for job id %s", ref)
 	h.mu.Lock()
+	defer bklog.G(ctx).Debugf("obtained mutex in (*HistoryQueue).Delete for job id %s", ref)
 	defer h.mu.Unlock()
 
 	return h.delete(ref, true)
@@ -545,13 +551,15 @@ func (h *HistoryQueue) ImportStatus(ctx context.Context, ch chan *client.SolveSt
 
 func (h *HistoryQueue) Listen(ctx context.Context, req *controlapi.BuildHistoryRequest, f func(*controlapi.BuildHistoryEvent) error) error {
 	h.init()
-
+	bklog.L.Debugf("starting (*HistoryQueue).Listen for job id %s", req.Ref)
 	h.mu.Lock()
+	bklog.L.Debugf("obtained mutex for (*HistoryQueue).Listen for job id %s", req.Ref)
 	sub := h.ps.Subscribe()
 	defer sub.close()
 
 	if req.Ref != "" {
 		if _, ok := h.deleted[req.Ref]; ok {
+			bklog.L.Debugf("released mutex for (*HistoryQueue).Listen for job %s", req.Ref)
 			h.mu.Unlock()
 			return errors.Wrapf(os.ErrNotExist, "ref %s is deleted", req.Ref)
 		}
@@ -581,6 +589,7 @@ func (h *HistoryQueue) Listen(ctx context.Context, req *controlapi.BuildHistoryR
 	}
 
 	h.mu.Unlock()
+	bklog.L.Debugf("released mutex for (*HistoryQueue).Listen for job %s", req.Ref)
 
 	if !req.ActiveOnly {
 		if err := h.DB.View(func(tx *bolt.Tx) error {
