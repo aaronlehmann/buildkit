@@ -28,6 +28,7 @@ import (
 	"github.com/moby/buildkit/solver/result"
 	spb "github.com/moby/buildkit/sourcepolicy/pb"
 	"github.com/moby/buildkit/util/attestation"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/buildinfo"
 	"github.com/moby/buildkit/util/compression"
 	"github.com/moby/buildkit/util/entitlements"
@@ -142,6 +143,8 @@ func (s *Solver) Bridge(b solver.Builder) frontend.FrontendLLBBridge {
 }
 
 func (s *Solver) recordBuildHistory(ctx context.Context, id string, req frontend.SolveRequest, exp ExporterRequest, j *solver.Job) (func(*Result, exporter.DescriptorReference, error) error, error) {
+	bklog.G(ctx).Debugf("starting recordBuildHistory for job id %s", id)
+	defer bklog.G(ctx).Debugf("finished recordBuildHistory for job id %s", id)
 	var stopTrace func() []tracetest.SpanStub
 
 	if s := trace.SpanFromContext(ctx); s.SpanContext().IsValid() {
@@ -400,10 +403,12 @@ func (s *Solver) recordBuildHistory(ctx context.Context, id string, req frontend
 }
 
 func (s *Solver) Solve(ctx context.Context, id string, sessionID string, req frontend.SolveRequest, exp ExporterRequest, ent []entitlements.Entitlement, post []Processor, internal bool, srcPol *spb.Policy) (_ *client.SolveResponse, err error) {
+	bklog.G(ctx).Debugf("reached (*Solver).Solve for job id %s", id)
 	j, err := s.solver.NewJob(id)
 	if err != nil {
 		return nil, err
 	}
+	bklog.G(ctx).Debugf("obtained job for job id %s", id)
 
 	defer j.Discard()
 
@@ -450,6 +455,7 @@ func (s *Solver) Solve(ctx context.Context, id string, sessionID string, req fro
 	if s.gatewayForwarder != nil && req.Definition == nil && req.Frontend == "" {
 		fwd := gateway.NewBridgeForwarder(ctx, br, s.workerController, req.FrontendInputs, sessionID, s.sm)
 		defer fwd.Discard()
+		bklog.G(ctx).Debugf("calling RegisterBuild(%s)", id)
 		if err := s.gatewayForwarder.RegisterBuild(ctx, id, fwd); err != nil {
 			return nil, err
 		}

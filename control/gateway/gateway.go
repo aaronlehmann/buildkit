@@ -8,6 +8,7 @@ import (
 	"github.com/moby/buildkit/client/buildid"
 	"github.com/moby/buildkit/frontend/gateway"
 	gwapi "github.com/moby/buildkit/frontend/gateway/pb"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
@@ -73,6 +74,7 @@ func (gwf *GatewayForwarder) lookupForwarder(ctx context.Context) (gateway.LLBBr
 	for {
 		select {
 		case <-ctx.Done():
+			bklog.G(ctx).Errorf("lookupForwarder timed out waiting for job %s", bid)
 			return nil, errors.Errorf("no such job %s", bid)
 		default:
 		}

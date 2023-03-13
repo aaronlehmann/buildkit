@@ -16,6 +16,7 @@ import (
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -79,6 +80,8 @@ func NewHistoryQueue(opt HistoryQueueOpt) *HistoryQueue {
 }
 
 func (h *HistoryQueue) gc() error {
+	bklog.L.Debugf("starting HistoryQueue gc")
+
 	var records []*controlapi.BuildHistoryRecord
 
 	if err := h.DB.View(func(tx *bolt.Tx) error {
@@ -111,17 +114,22 @@ func (h *HistoryQueue) gc() error {
 		return records[i].CompletedAt.Before(*records[j].CompletedAt)
 	})
 
+	bklog.L.Debugf("locking mutex in HistoryQueue gc - will check %d entries", len(records)-int(h.CleanConfig.MaxEntries))
 	h.mu.Lock()
+	bklog.L.Debugf("obtained mutex in HistoryQueue gc")
 	defer h.mu.Unlock()
 
+	deleted := 0
 	now := time.Now()
 	for _, r := range records[h.CleanConfig.MaxEntries:] {
 		if now.Add(time.Duration(h.CleanConfig.MaxAge) * -time.Second).After(*r.CompletedAt) {
 			if err := h.delete(r.Ref, false); err != nil {
 				return err
 			}
+			deleted++
 		}
 	}
+	bklog.L.Debugf("finished HistoryQueue gc - deleted %d entries", deleted)
 
 	return nil
 }
@@ -344,8 +352,15 @@ func (h *HistoryQueue) update(ctx context.Context, rec controlapi.BuildHistoryRe
 }
 
 func (h *HistoryQueue) Update(ctx context.Context, e *controlapi.BuildHistoryEvent) error {
+	if e.Type == controlapi.BuildHistoryEventType_STARTED {
+		bklog.G(ctx).Debugf("starting (*HistoryQueue.Update for job id %s", e.Record.Ref)
+		defer bklog.G(ctx).Debugf("finished (*HistoryQueue).Update for job id %s", e.Record.Ref)
+	}
 	h.init()
 	h.mu.Lock()
+	if e.Type == controlapi.BuildHistoryEventType_STARTED {
+		bklog.G(ctx).Debugf("obtained (*HistoryQueue).Update mutex for job id %s", e.Record.Ref)
+	}
 	defer h.mu.Unlock()
 
 	if e.Type == controlapi.BuildHistoryEventType_STARTED {
