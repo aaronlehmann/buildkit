@@ -123,7 +123,7 @@ func (h *HistoryQueue) gc() error {
 	now := time.Now()
 	for _, r := range records[h.CleanConfig.MaxEntries:] {
 		if now.Add(time.Duration(h.CleanConfig.MaxAge) * -time.Second).After(*r.CompletedAt) {
-			if err := h.delete(r.Ref, false); err != nil {
+			if err := h.delete(context.TODO(), r.Ref, false); err != nil {
 				return err
 			}
 			deleted++
@@ -134,13 +134,15 @@ func (h *HistoryQueue) gc() error {
 	return nil
 }
 
-func (h *HistoryQueue) delete(ref string, sync bool) error {
+func (h *HistoryQueue) delete(ctx context.Context, ref string, sync bool) error {
 	if _, ok := h.refs[ref]; ok {
 		h.deleted[ref] = struct{}{}
 		return nil
 	}
 	delete(h.deleted, ref)
+	bklog.G(ctx).Debugf("acquiring boltdb tx in (*HistoryQueue).delete for job id %s", ref)
 	if err := h.DB.Update(func(tx *bolt.Tx) error {
+		bklog.G(ctx).Debugf("obtained boltdb tx in (*HistoryQueue).delete for job id %s", ref)
 		b := tx.Bucket([]byte(recordsBucket))
 		if b == nil {
 			return os.ErrNotExist
@@ -150,7 +152,9 @@ func (h *HistoryQueue) delete(ref string, sync bool) error {
 		if sync {
 			opts = append(opts, leases.SynchronousDelete)
 		}
+		bklog.G(ctx).Debugf("calling LeaseManager.Delete in (*HistoryQueue).delete for job id %s", ref)
 		err2 := h.LeaseManager.Delete(context.TODO(), leases.Lease{ID: h.leaseID(ref)}, opts...)
+		bklog.G(ctx).Debugf("finished LeaseManager.Delete in (*HistoryQueue).delete for job id %s", ref)
 		if err1 != nil {
 			return err1
 		}
@@ -299,7 +303,9 @@ func (h *HistoryQueue) Status(ctx context.Context, ref string, st chan<- *client
 }
 
 func (h *HistoryQueue) update(ctx context.Context, rec controlapi.BuildHistoryRecord) error {
+	bklog.G(ctx).Debugf("acquiring boltdb tx in (*HistoryQueue).update for job id %s", rec.Ref)
 	return h.DB.Update(func(tx *bolt.Tx) (err error) {
+		bklog.G(ctx).Debugf("obtained boltdb tx in (*HistoryQueue).update for job id %s", rec.Ref)
 		b := tx.Bucket([]byte(recordsBucket))
 		if b == nil {
 			return nil
@@ -309,7 +315,9 @@ func (h *HistoryQueue) update(ctx context.Context, rec controlapi.BuildHistoryRe
 			return err
 		}
 
+		bklog.G(ctx).Debugf("calling LeaseManager.Create in (*HistoryQueue).update for job id %s", rec.Ref)
 		l, err := h.LeaseManager.Create(ctx, leases.WithID(h.leaseID(rec.Ref)))
+		bklog.G(ctx).Debugf("finished LeaseManager.Create in (*HistoryQueue).update for job id %s", rec.Ref)
 		created := true
 		if err != nil {
 			if !errors.Is(err, errdefs.ErrAlreadyExists) {
@@ -321,10 +329,14 @@ func (h *HistoryQueue) update(ctx context.Context, rec controlapi.BuildHistoryRe
 
 		defer func() {
 			if err != nil && created {
+				bklog.G(ctx).Debugf("calling LeaseManager.Delete in (*HistoryQueue).update for job id %s", rec.Ref)
 				h.LeaseManager.Delete(ctx, l)
+				bklog.G(ctx).Debugf("finished LeaseManager.Delete in (*HistoryQueue).update for job id %s", rec.Ref)
 			}
 		}()
 
+		bklog.G(ctx).Debugf("calling LeaseManager.AddResource in (*HistoryQueue).update for job id %s", rec.Ref)
+		calls := 2
 		if err := h.addResource(ctx, l, rec.Logs); err != nil {
 			return err
 		}
@@ -335,22 +347,27 @@ func (h *HistoryQueue) update(ctx context.Context, rec controlapi.BuildHistoryRe
 			if err := h.addResource(ctx, l, rec.Result.Result); err != nil {
 				return err
 			}
+			calls++
 			for _, att := range rec.Result.Attestations {
 				if err := h.addResource(ctx, l, att); err != nil {
 					return err
 				}
+				calls++
 			}
 		}
 		for _, r := range rec.Results {
 			if err := h.addResource(ctx, l, r.Result); err != nil {
 				return err
 			}
+			calls++
 			for _, att := range r.Attestations {
 				if err := h.addResource(ctx, l, att); err != nil {
 					return err
 				}
+				calls++
 			}
 		}
+		bklog.G(ctx).Debugf("finished %d calls to LeaseManager.AddResource in (*HistoryQueue).update for job id %s", calls, rec.Ref)
 
 		return b.Put([]byte(rec.Ref), dt)
 	})
@@ -388,7 +405,7 @@ func (h *HistoryQueue) Delete(ctx context.Context, ref string) error {
 	defer bklog.G(ctx).Debugf("obtained mutex in (*HistoryQueue).Delete for job id %s", ref)
 	defer h.mu.Unlock()
 
-	return h.delete(ref, true)
+	return h.delete(ctx, ref, true)
 }
 
 func (h *HistoryQueue) OpenBlobWriter(ctx context.Context, mt string) (_ *Writer, err error) {
@@ -571,7 +588,7 @@ func (h *HistoryQueue) Listen(ctx context.Context, req *controlapi.BuildHistoryR
 			if _, ok := h.deleted[req.Ref]; ok {
 				if h.refs[req.Ref] == 0 {
 					delete(h.refs, req.Ref)
-					h.delete(req.Ref, false)
+					h.delete(ctx, req.Ref, false)
 				}
 			}
 			h.mu.Unlock()
