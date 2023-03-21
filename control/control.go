@@ -40,6 +40,7 @@ import (
 	"github.com/pkg/errors"
 	"go.etcd.io/bbolt"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -496,20 +497,25 @@ func (c *Controller) Session(stream controlapi.Control_SessionServer) error {
 }
 
 func (c *Controller) ListWorkers(ctx context.Context, r *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
+	trace.SpanFromContext(ctx).AddEvent("reached ListWorkers handler")
 	resp := &controlapi.ListWorkersResponse{}
 	workers, err := c.opt.WorkerController.List(r.Filter...)
 	if err != nil {
 		return nil, err
 	}
 	for _, w := range workers {
+		trace.SpanFromContext(ctx).AddEvent("calling Platforms")
+		platforms := w.Platforms(true)
+		trace.SpanFromContext(ctx).AddEvent("done calling Platforms")
 		resp.Record = append(resp.Record, &apitypes.WorkerRecord{
 			ID:              w.ID(),
 			Labels:          w.Labels(),
-			Platforms:       pb.PlatformsFromSpec(w.Platforms(true)),
+			Platforms:       pb.PlatformsFromSpec(platforms),
 			GCPolicy:        toPBGCPolicy(w.GCPolicy()),
 			BuildkitVersion: toPBBuildkitVersion(w.BuildkitVersion()),
 		})
 	}
+	trace.SpanFromContext(ctx).AddEvent("returning from ListWorkers handler")
 	return resp, nil
 }
 
